@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "db-bkup"
+version = "1.0.0"
+description = "Python Command Line Utility"
+readme = "README.md"
+authors = [{name = "Habeeb Muhydeen", email = "allyearmustobey@gmail.com"}]
+license = {file = "LICENSE"}
+classifiers = [
+"License :: MIT License",
+"Programming Language :: Python :: 3"
+]
+keywords = ["db-bkup", "python backup utility", "backup-utility"]
+requires-python = ">=3.9"
+
+
+[tool.setuptools]
+packages = ["src"]
+[tool.bumpver]
+current_version = "2024.1001-alpha"
+version_pattern = "YYYY.BUILD[-TAG]"
+commit_message = "bump version {old_version} -> {new_version}"
+tag_message = "{new_version}"
+tag_scope = "default"
+pre_commit_hook = ""
+post_commit_hook = ""
+commit = true
+tag = true
+push = true
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = [
+    'current_version = "{version}"',
+]
+
+"src/db-bkup/__init__.py" = ["{version}"]
+
+
