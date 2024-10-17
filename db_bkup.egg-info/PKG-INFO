@@ -31,3 +31,5 @@ Classifier: Programming Language :: Python :: 3
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 License-File: LICENSE
+Requires-Dist: bumpver
+Requires-Dist: pip-tools

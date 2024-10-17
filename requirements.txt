@@ -4,3 +4,33 @@
 #
 #    pip-compile pyproject.toml
 #
+build==1.2.2.post1
+    # via pip-tools
+bumpver==2023.1129
+    # via db-bkup (pyproject.toml)
+click==8.1.7
+    # via
+    #   bumpver
+    #   pip-tools
+colorama==0.4.6
+    # via bumpver
+lexid==2021.1006
+    # via bumpver
+looseversion==1.3.0
+    # via bumpver
+packaging==24.1
+    # via build
+pip-tools==7.4.1
+    # via db-bkup (pyproject.toml)
+pyproject-hooks==1.2.0
+    # via
+    #   build
+    #   pip-tools
+toml==0.10.2
+    # via bumpver
+wheel==0.44.0
+    # via pip-tools
+
+# The following packages are considered to be unsafe in a requirements file:
+# pip
+# setuptools

@@ -15,6 +15,12 @@ classifiers = [
 "Programming Language :: Python :: 3"
 ]
 keywords = ["db-bkup", "python backup utility", "backup-utility"]
+dependencies = [
+    "bumpver",
+    "pip-tools",
+    "fire"
+    "mysql-connector-python"
+]
 requires-python = ">=3.9"
 
 
