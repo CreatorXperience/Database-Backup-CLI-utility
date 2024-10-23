@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from google.cloud import storage
 from mysql_operator import BackupOperator
+from cryptography.fernet import Fernet
 import os
 import typing
 import click
@@ -46,8 +47,6 @@ current_user_db = dict({
         "db": None
         })
 
-mongo_c = None
-
 
 def validate_authentication_credentials(host, port, username, password, db):
     matched = re.search(r"(?P<ip>\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})", host)
@@ -63,36 +62,48 @@ def validate_authentication_credentials(host, port, username, password, db):
         print("Bad host")
 
 
-def connect_to_mysql(host):
-    hostname = os.environ.get("MYSQL_HOSTNAME")
-    port = os.environ.get("PORT")
-    username = os.environ.get("USER_NAME")
-    password = os.environ.get("PASS_WORD")
+def connect_to_mysql(hostname, port, username, password,db):
     # backup_operator = BackupOperator(hostname=hostname, port=port, username=username, password=password)
-
-    timeout = 10
-    connection = pymysql.connect(
-    charset="utf8mb4",
-    connect_timeout=timeout,
-    cursorclass=pymysql.cursors.DictCursor,
-    db="defaultdb",
-    host="mysql-82447bb-sqlone.j.aivencloud.com",
-    password="AVNS_vo-by8bVADKM-Ywq2i0",
-    read_timeout=timeout,
-    port=15527,
-    user="avnadmin",
-    write_timeout=timeout,
-    )
-
+    connection = None
     try:
+        timeout = 10
+        connection = pymysql.connect(
+        charset="utf8mb4",
+        connect_timeout=timeout,
+        cursorclass=pymysql.cursors.DictCursor,
+        db=db,
+        host=hostname,
+        password=password,
+        read_timeout=timeout,
+        port=15527,
+        user=username,
+        write_timeout=timeout,
+        )
+
         cursor = connection.cursor()
-        cursor.execute("CREATE TABLE mytest (id INTEGER PRIMARY KEY)")
         cursor.execute("INSERT INTO mytest (id) VALUES (1), (2)")
         cursor.execute("SELECT * FROM mytest")
         print(cursor.fetchall())
+        print(click.style("connected to mysql database", "green", bold=True, underline=True))
+        if os.path.exists(config_path+"/db_bkup"):
+            current_user_db["db"] = "mysql"
+            current_user_db["port"] = port
+            current_user_db["db_name"] = db
+            current_user_db["username"] = username
+            key = Fernet.generate_key()
+            f = Fernet(key)
+            token = f.encrypt(password.encode())
+            current_user_db["password"] = token
+            current_user_db["key"] = key
+            with open(config_path+"/db_bkup/auth.json", "w") as  auth_config:
+                json.dump(current_user_db, auth_config)
+    except pymysql.err.OperationalError as OE:
+        print(click.style(f" x incorrect login credentials {OE} Try Again", "red" , bold=True, underline=True))
     finally:
-        print("successfully connected to mysql")
-        connection.close()
+        if connection is not None:
+            connection.close()
+        else:
+            return
 
 
 def connect_to_mongodb(host):
@@ -100,7 +111,7 @@ def connect_to_mongodb(host):
     try:
         if host == "127.0.0.1":
             uri = "mongodb://localhost:27017/"
-            mongo_c = pymongo.MongoClient(uri, tlscafile=certifi.where())
+            pymongo.MongoClient(uri, tlscafile=certifi.where())
             current_user_db["db"] = "mongodb"
             current_user_db["uri"] = host
             if os.path.exists(config_path+"/db_bkup"):
@@ -113,7 +124,7 @@ def connect_to_mongodb(host):
                     json.dump(current_user_db, auth)
         else:
             uri = host
-            mongo_c = pymongo.MongoClient(uri, tlscafile=certifi.where())
+            pymongo.MongoClient(uri, tlscafile=certifi.where())
             current_user_db["db"] = "mongodb"
             current_user_db["uri"] = uri
             with open(config_path+"/db_bkup/auth.json", "w") as auth_file:
@@ -179,13 +190,14 @@ def cli():
 @click.option("--port", prompt=True)
 @click.option("--db", prompt=True,
               type=click.Choice(["mongodb", "postgresql", "mysql"]))
-def sync(host, port, username, password, db):
-    is_validated = validate_authentication_credentials(host, port, username, password, db)
-    if is_validated:
-        print("validated")
-    else:
-        print("bad payload, wrong data")
-        sys.exit()
+@click.option("--sqldbname", help="Provide sql database name")
+def sync(username, password, host, port, db, sqldbname):
+   # is_validated = validate_authentication_credentials(host, port, username, password, db)
+    #if is_validated:
+     #   print("validated")
+    #else:
+     #   print("bad payload, wrong data")
+      #  sys.exit()
     match db:
         case "postgresql":
             print("postgresql is used")
@@ -196,7 +208,10 @@ def sync(host, port, username, password, db):
         case "mongodb":
             connect_to_mongodb(host)
         case "mysql":
-            connect_to_mysql()
+            if sqldbname:
+                connect_to_mysql(host, port, username, password, sqldbname)
+                return
+            print(click.style("Provide your sql database name", "red", bold=True, underline=True))
             # replace click with the appropriate module for mysql
 
             print("mysql is used")
