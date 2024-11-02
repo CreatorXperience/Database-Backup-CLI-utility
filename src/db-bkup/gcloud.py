@@ -7,7 +7,6 @@ import typing
 import click
 import importlib
 import re
-import sys
 import certifi
 import pymongo
 import json
@@ -61,7 +60,6 @@ def validate_authentication_credentials(host, port, username, password, db):
     except ValueError:
         print("Bad host")
 
-
 def connect_to_mysql(hostname, port, username, password,db):
     # backup_operator = BackupOperator(hostname=hostname, port=port, username=username, password=password)
     connection = None
@@ -75,7 +73,7 @@ def connect_to_mysql(hostname, port, username, password,db):
         host=hostname,
         password=password,
         read_timeout=timeout,
-        port=15527,
+        port=int(port),
         user=username,
         write_timeout=timeout,
         )
@@ -90,11 +88,12 @@ def connect_to_mysql(hostname, port, username, password,db):
             current_user_db["port"] = port
             current_user_db["db_name"] = db
             current_user_db["username"] = username
+            current_user_db["host"] = hostname
             key = Fernet.generate_key()
             f = Fernet(key)
             token = f.encrypt(password.encode())
-            current_user_db["password"] = token
-            current_user_db["key"] = key
+            current_user_db["password"] = token.decode()
+            current_user_db["key"] = key.decode()
             with open(config_path+"/db_bkup/auth.json", "w") as  auth_config:
                 json.dump(current_user_db, auth_config)
     except pymysql.err.OperationalError as OE:
@@ -106,29 +105,20 @@ def connect_to_mysql(hostname, port, username, password,db):
             return
 
 
-def connect_to_mongodb(host):
+def connect_to_mongodb(uri):
     global current_user_db
     try:
-        if host == "127.0.0.1":
-            uri = "mongodb://localhost:27017/"
-            pymongo.MongoClient(uri, tlscafile=certifi.where())
-            current_user_db["db"] = "mongodb"
-            current_user_db["uri"] = host
-            if os.path.exists(config_path+"/db_bkup"):
-                with open(config_path+"/db_bkup/auth.json", "w") as auth_file:
-                    json.dump(current_user_db, auth_file)
-            else:
-                os.makedirs(config_path+"/db_bkup")
-                file = config_path+"/db_bkup/auth.json"
-                with open(file, "w") as auth:
-                    json.dump(current_user_db, auth)
-        else:
-            uri = host
-            pymongo.MongoClient(uri, tlscafile=certifi.where())
-            current_user_db["db"] = "mongodb"
-            current_user_db["uri"] = uri
+        pymongo.MongoClient(uri, tlscafile=certifi.where())
+        current_user_db["db"] = "mongodb"
+        current_user_db["uri"] = uri
+        if os.path.exists(config_path+"/db_bkup"):
             with open(config_path+"/db_bkup/auth.json", "w") as auth_file:
                 json.dump(current_user_db, auth_file)
+        else:
+            os.makedirs(config_path+"/db_bkup")
+            file = config_path+"/db_bkup/auth.json"
+            with open(file, "w") as conf:
+                json.dump(current_user_db, conf)
         print(click.style("• connected to mongodb database successfully",
                           "green", bold=True, dim=True))
 
@@ -144,10 +134,33 @@ class JSONEncoder(json.JSONEncoder):
         return super().default(o)
 
 
-def backup_mongodb(uri, db_name, *, coll: str | None):
-    print(db_name, end="97")
+def backup_mysql(table):
+    with open(config_path+"/db_bkup/auth.json", "r") as auth_cnf:
+        auth_cfg = json.load(auth_cnf)
+        f = Fernet(auth_cfg["key"].encode())
+        connectobj = pymysql.connect(
+                host=auth_cfg["host"],
+                password=f.decrypt(auth_cfg["password"].encode()),
+                database=auth_cfg["db_name"],
+                user=auth_cfg["username"],
+                cursorclass=pymysql.cursors.DictCursor,
+                read_timeout=10,
+                connect_timeout=10,
+                charset="utf8mb4",
+                port=int(auth_cfg["port"])
+                )
+
+        cursor = connectobj.cursor()
+        tables = cursor.execute("SHOW TABLES")
+        tables = [table for table in cursor.fetchall()]
+        cursor.execute(f"SELECT * FROM mytest")
+        data = cursor.fetchall()
+        print(data)
+
+def backup_mongodb(uri, db_name:str | None, *, coll: str | None):
     mongo_c = pymongo.MongoClient(uri, tlscafile=certifi.where())
-    db = mongo_c[db_name]
+    if db_name:
+        db = mongo_c[db_name]
     if coll is not None:
         print(coll, end="101")
         collection = db[coll]
@@ -184,20 +197,23 @@ def cli():
 @cli.command(help='''Connect to your prefered database.
             We currently support this databases 'MYSQL', 'POSTGRESQL', 'MONGODB'
              ''')
-@click.argument("username")
-@click.argument("password")
-@click.option("--host", prompt=True)
-@click.option("--port", prompt=True)
 @click.option("--db", prompt=True,
               type=click.Choice(["mongodb", "postgresql", "mysql"]))
-@click.option("--sqldbname", help="Provide sql database name")
-def sync(username, password, host, port, db, sqldbname):
+@click.option("--username", required=False)
+@click.option("--password", required=False)
+@click.option("--uri")
+@click.option("--host", help="connect to database  via host ip address", required=False)
+@click.option("--port", required=False)
+@click.option("--sqldbname", help="Provide sql database name", required=False)
+def sync(username, password, uri, host, port, db, sqldbname):
    # is_validated = validate_authentication_credentials(host, port, username, password, db)
     #if is_validated:
      #   print("validated")
     #else:
      #   print("bad payload, wrong data")
       #  sys.exit()
+
+
     match db:
         case "postgresql":
             print("postgresql is used")
@@ -206,19 +222,23 @@ def sync(username, password, host, port, db, sqldbname):
             print(postgres.command())
             return
         case "mongodb":
-            connect_to_mongodb(host)
+            if uri:
+                connect_to_mongodb(uri)
+            else:
+                print(click.style("mongodb uri not provided. Run db_bkup sync --help", "red", bold=True, underline=True))
         case "mysql":
-            if sqldbname:
-                connect_to_mysql(host, port, username, password, sqldbname)
+            if db == "mysql" and None in list([username, password, host, port, sqldbname]):
+                print(click.style(f"Host not found. Run db_bkup sync --help", "red", bold=True, underline=True))
+                raise click.ClickException("options to connect to your mysql database not provided or incomplete")
                 return
-            print(click.style("Provide your sql database name", "red", bold=True, underline=True))
-            # replace click with the appropriate module for mysql
 
+            connect_to_mysql(host, port, username, password, sqldbname)
             print("mysql is used")
+            return
 
 
 @cli.command(help="Backup entire database on local device or cloud. Note, we currently support google cloud ")
-@click.argument("database_name")
+@click.option("--database_name")
 @click.option("--table", help="Backup table in a SQL database")
 @click.option("--collection", help="Backup collection for MongoDB database")
 @click.option("--t", default="full", type=click.Choice(["full", "increment"]))
@@ -232,7 +252,7 @@ def backup(database_name, table, collection, t, d):
                 case "mongodb":
                     print("the user is using mongodb database")
                     if collection:
-                        backup_mongodb(auth_obj["uri"], database_name, coll=collection)
+                        backup_mongodb(auth_obj["uri"], None, coll=collection)
                     else:
                         backup_mongodb(auth_obj["uri"], database_name, coll=None)
                     return
@@ -241,7 +261,9 @@ def backup(database_name, table, collection, t, d):
                     print("the user is using postgres")
                     return
                 case "mysql":
-                    table = True
+                    if table and not collection:
+                        backup_mysql(table)
+                        click.ClickException("Provide what to backup table of")
                     return
             print(click.style(f" • successfully backup database {t} and {d}", "green", underline=True))
     except FileNotFoundError as FnFe:
