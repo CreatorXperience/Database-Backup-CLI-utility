@@ -12,6 +12,7 @@ import pymongo
 import json
 import bson
 import pymysql
+import datetime
 
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./database-service-account-key.json"
@@ -131,10 +132,13 @@ class JSONEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, bson.ObjectId):
             return str(o)
+        if isinstance(o, datetime):
+            return str(o)
         return super().default(o)
 
 
-def backup_mysql(table):
+def backup_mysql(table: None | str = None):
+
     with open(config_path+"/db_bkup/auth.json", "r") as auth_cnf:
         auth_cfg = json.load(auth_cnf)
         f = Fernet(auth_cfg["key"].encode())
@@ -151,31 +155,56 @@ def backup_mysql(table):
                 )
 
         cursor = connectobj.cursor()
+        if table:
+            cursor.execute("SELECT * FROM  {}".format(table))
+            data = cursor.fetchall()
+            # save_dir()
+            return
+
         tables = cursor.execute("SHOW TABLES")
         tables = [table for table in cursor.fetchall()]
-        cursor.execute(f"SELECT * FROM mytest")
+        table_map = {}
+
+        print(click.style("Select SQL Tables with digit  e.g 1 ", "red", bold=True, dim=True))
+        for idx, table in enumerate(tables):
+            for t in table.values():
+                table_map[f"{idx+1}"] = t
+            print(click.style(f"{idx+1:<10}"+t,  "yellow", bold=True))
+
+        selected_table = input("Which table do you want to backup:  ")
+        print(click.style("your selected database is {}".format(table_map[selected_table]), "green", bold=True))
+        cursor.execute("SELECT * fROM {}".format(table_map[selected_table]))
         data = cursor.fetchall()
         print(data)
+#        save_data()
+
+#        subprocess.run([f"echo {idx+1}"])
+        # cursor.execute("SELECT * FROM {}".format(tables[0]["Tables_in_defaultfb"]))
+#        data = cursor.fetchall()
+        print()
 
 def backup_mongodb(uri, db_name:str | None, *, coll: str | None):
     mongo_c = pymongo.MongoClient(uri, tlscafile=certifi.where())
-    if db_name:
+    if db_name is not None:
         db = mongo_c[db_name]
     if coll is not None:
-        print(coll, end="101")
         collection = db[coll]
         document = collection.find()
         mongodb_default_backup_dir = os.path.expanduser("~/.config/db_bkup/mongodb")
         backup_file = mongodb_default_backup_dir+"/{}".format(coll)
         if os.path.exists(mongodb_default_backup_dir):
+            data_struct  = []
+            for doc in document:
+                jsonDoc = {
+                    '_id': doc["_id"],
+                    **doc
+                    }
+                data_struct.append(jsonDoc)
+            if len(data_struct) == 0:
+                print(click.style("collection {coll} contains no document", "green", dim=True, bold=True))
+                return
             with open(backup_file, "w") as default_bk_file:
-                for doc in document:
-                    jsonDoc = {
-                            '_id': doc["_id"],
-                            **doc
-                            }
-
-                    json.dump(jsonDoc, default_bk_file, cls=JSONEncoder)
+                json.dump(data_struct, default_bk_file, cls=JSONEncoder)
         else:
             os.mkdir(mongodb_default_backup_dir)
             with open(backup_file, "w") as default_bk_file:
@@ -183,8 +212,25 @@ def backup_mongodb(uri, db_name:str | None, *, coll: str | None):
 
     else:
         collections = db.list_collection_names()
-        for c in collections:
-            backup_mongodb(uri, db_name, coll=c)
+        if len(collections) == 0:
+            print(click.style(f"specified database {db_name} has zero collections. create one on your mongodb cluster",  "red", bold=True))
+            return
+
+        collection_map = {}
+        print(click.style("Select MongoDB collection with digit e.g 1 or All for backing up entire database", "red", bold=True, dim=True))
+
+        for idx, c in enumerate(collections):
+            collection_map[f"{idx+1}"] = c
+            print(click.style(f"{idx+1:^10}"+ c, "yellow", bold=True))
+        selected_coll = input("select a collection to back up or backup entire database: ")
+        if selected_coll.lower() == "all":
+            for col in collections:
+                backup_mongodb(uri, db_name, coll=col)
+        else:
+            try:
+                backup_mongodb(uri, db_name, coll=collection_map[selected_coll])
+            except KeyError:
+                print(click.style(f"Value error,{selected_coll} not among option", "red", bold=True))
 
     return
 
@@ -252,9 +298,11 @@ def backup(database_name, table, collection, t, d):
                 case "mongodb":
                     print("the user is using mongodb database")
                     if collection:
-                        backup_mongodb(auth_obj["uri"], None, coll=collection)
-                    else:
+                        backup_mongodb(auth_obj["uri"], database_name, coll=collection)
+                    elif database_name:
                         backup_mongodb(auth_obj["uri"], database_name, coll=None)
+                    else:
+                        print(click.style("You did pass the options to backup a mongoDB  database. RUN db_bkup backup --help", "red", bold=True))
                     return
                 case "postgresql":
                     table = True
@@ -263,7 +311,8 @@ def backup(database_name, table, collection, t, d):
                 case "mysql":
                     if table and not collection:
                         backup_mysql(table)
-                        click.ClickException("Provide what to backup table of")
+                    else:
+                        backup_mysql()
                     return
             print(click.style(f" • successfully backup database {t} and {d}", "green", underline=True))
     except FileNotFoundError as FnFe:
