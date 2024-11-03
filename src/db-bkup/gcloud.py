@@ -46,6 +46,10 @@ config_path = os.path.expanduser("~")+"/.config"
 current_user_db = dict({
         "db": None
         })
+warning = click.style("[!WARNING]", "yellow", bold=True, dim=True)
+error = click.style("[ERROR]", "red", bold=True, dim=True)
+success = click.style("[SUCCESS]", "green", bold=True, dim=True)
+info = click.style("[INFO]", "green", bold=True, dim=True, underline=True)
 
 
 def validate_authentication_credentials(host, port, username, password, db):
@@ -83,7 +87,7 @@ def connect_to_mysql(hostname, port, username, password,db):
         cursor.execute("INSERT INTO mytest (id) VALUES (1), (2)")
         cursor.execute("SELECT * FROM mytest")
         print(cursor.fetchall())
-        print(click.style("connected to mysql database", "green", bold=True, underline=True))
+        print(click.style(f"{success} connected to mysql database", "green", bold=True, underline=True))
         if os.path.exists(config_path+"/db_bkup"):
             current_user_db["db"] = "mysql"
             current_user_db["port"] = port
@@ -120,7 +124,7 @@ def connect_to_mongodb(uri):
             file = config_path+"/db_bkup/auth.json"
             with open(file, "w") as conf:
                 json.dump(current_user_db, conf)
-        print(click.style("• connected to mongodb database successfully",
+        click.echo(success + click.style(" Connected to mongodb database successfully",
                           "green", bold=True, dim=True))
 
     except pymongo.errors.ServerSelectionTimeoutError:
@@ -172,7 +176,7 @@ def backup_mysql(table: None | str = None):
             print(click.style(f"{idx+1:<10}"+t,  "yellow", bold=True))
 
         selected_table = input("Which table do you want to backup:  ")
-        print(click.style("your selected database is {}".format(table_map[selected_table]), "green", bold=True))
+        print(click.style("{} your selected database is {}".format(success, table_map[selected_table]), "green", bold=True))
         cursor.execute("SELECT * fROM {}".format(table_map[selected_table]))
         data = cursor.fetchall()
         print(data)
@@ -201,7 +205,7 @@ def backup_mongodb(uri, db_name:str | None, *, coll: str | None):
                     }
                 data_struct.append(jsonDoc)
             if len(data_struct) == 0:
-                print(click.style("collection {coll} contains no document", "green", dim=True, bold=True))
+                click.echo(warning + click.style(f" Collection {coll} contains no document", "yellow", bold=True))
                 return
             with open(backup_file, "w") as default_bk_file:
                 json.dump(data_struct, default_bk_file, cls=JSONEncoder)
@@ -213,7 +217,7 @@ def backup_mongodb(uri, db_name:str | None, *, coll: str | None):
     else:
         collections = db.list_collection_names()
         if len(collections) == 0:
-            print(click.style(f"specified database {db_name} has zero collections. create one on your mongodb cluster",  "red", bold=True))
+            click.echo(info+click.style(f"specified database {db_name} has zero collections. create one on your mongodb cluster",  "green", bold=True))
             return
 
         collection_map = {}
@@ -226,11 +230,12 @@ def backup_mongodb(uri, db_name:str | None, *, coll: str | None):
         if selected_coll.lower() == "all":
             for col in collections:
                 backup_mongodb(uri, db_name, coll=col)
+                click.echo(success + click.style(" Backup entire database successfully", "green"))
         else:
             try:
                 backup_mongodb(uri, db_name, coll=collection_map[selected_coll])
             except KeyError:
-                print(click.style(f"Value error,{selected_coll} not among option", "red", bold=True))
+                print(click.style(f"{error} Value error,{selected_coll} not among option", "red", bold=True))
 
     return
 
@@ -279,7 +284,6 @@ def sync(username, password, uri, host, port, db, sqldbname):
                 return
 
             connect_to_mysql(host, port, username, password, sqldbname)
-            print("mysql is used")
             return
 
 
