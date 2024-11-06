@@ -168,6 +168,20 @@ class JSONEncoder(json.JSONEncoder):
         return super().default(o)
 
 
+def save_sql_data_on_local(data, filename: str):
+    if os.path.exists(config_path+"/db_bkup"):
+        if os.path.exists(config_path+"/db_bkup/mysql"):
+            with open(config_path+"/db_bkup/mysql/{}".format(filename+".json"), "w") as sql_db_bkup:
+                json.dump(data, sql_db_bkup)
+        else:
+            os.mkdir(config_path+"/db_bkup/mysql")
+            save_sql_data_on_local(data, filename)
+    else:
+        os.makedirs(config_path+"/db_bkup/mysql")
+        save_sql_data_on_local(data, filename)
+
+
+
 def backup_mysql(table: None | str = None):
 
     with open(config_path+"/db_bkup/auth.json", "r") as auth_cnf:
@@ -190,7 +204,7 @@ def backup_mysql(table: None | str = None):
             cursor.execute("SELECT * FROM  {}".format(table))
             data = cursor.fetchall()
             print(data)
-            # save_dir()
+            save_sql_data_on_local(data, table)
             return
 
         tables = cursor.execute("SHOW TABLES")
