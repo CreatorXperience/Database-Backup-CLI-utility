@@ -83,11 +83,38 @@ def connect_to_mysql(hostname, port, username, password,db):
         write_timeout=timeout,
         )
 
-        cursor = connection.cursor()
-        cursor.execute("INSERT INTO mytest (id) VALUES (1), (2)")
-        cursor.execute("SELECT * FROM mytest")
-        print(cursor.fetchall())
-        print(click.style(f"{success} connected to mysql database", "green", bold=True, underline=True))
+        #cursor = connection.cursor()
+        #cursor.execute("INSERT INTO mytest (id) VALUES (1), (2)")
+        #connection.commit()
+        #cursor.execute("SELECT * FROM mytest")
+        #print(cursor.fetchall())
+
+
+        with connection.cursor() as cursor:
+            create_table_query = """
+        CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(50) NOT NULL,
+            email VARCHAR(100) NOT NULL,
+            age INT
+        );
+        """
+
+            cursor.execute(create_table_query)
+            insert_data_query = "INSERT INTO users (name, email, age) VALUES (%s, %s, %s);"
+            user_data = [
+            ("John Doe", "john.doe@example.com", 30),
+            ("Jane Smith", "jane.smith@example.com", 28),
+            ("Alice Johnson", "alice.j@example.com", 25)
+            ]
+
+            cursor.executemany(insert_data_query, user_data)
+
+        # Commit the transaction
+            connection.commit()
+            print("Data inserted successfully.")
+            print("Table created successfully.")
+            print(click.style(f"{success} connected to mysql database", "green", bold=True, underline=True))
         if os.path.exists(config_path+"/db_bkup"):
             current_user_db["db"] = "mysql"
             current_user_db["port"] = port
@@ -162,6 +189,7 @@ def backup_mysql(table: None | str = None):
         if table:
             cursor.execute("SELECT * FROM  {}".format(table))
             data = cursor.fetchall()
+            print(data)
             # save_dir()
             return
 
@@ -176,10 +204,20 @@ def backup_mysql(table: None | str = None):
             print(click.style(f"{idx+1:<10}"+t,  "yellow", bold=True))
 
         selected_table = input("Which table do you want to backup:  ")
-        print(click.style("{} your selected database is {}".format(success, table_map[selected_table]), "green", bold=True))
-        cursor.execute("SELECT * fROM {}".format(table_map[selected_table]))
-        data = cursor.fetchall()
-        print(data)
+
+        if selected_table.lower() == "all":
+            for t in table.values():
+                backup_mysql(t)
+                return
+
+        try:
+            print(click.style("{} your selected database is {}".format(success, table_map[selected_table]), "green", bold=True))
+            cursor.execute("SELECT * fROM {}".format(table_map[selected_table]))
+            data = cursor.fetchall()
+            print(data)
+        except KeyError:
+            click.echo(error + click.style(" Please select with numbers instead."))
+
 #        save_data()
 
 #        subprocess.run([f"echo {idx+1}"])
