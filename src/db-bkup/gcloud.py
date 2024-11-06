@@ -65,8 +65,79 @@ def validate_authentication_credentials(host, port, username, password, db):
     except ValueError:
         print("Bad host")
 
-def connect_to_mysql(hostname, port, username, password,db):
-    # backup_operator = BackupOperator(hostname=hostname, port=port, username=username, password=password)
+def connect_to_mysql(hostname, port, username, password,db, db_type):
+    connection = None
+    try:
+        timeout = 10
+        if db_type == "mysql":
+            connection = pymysql.connect(
+            charset="utf8mb4",
+            connect_timeout=timeout,
+            cursorclass=pymysql.cursors.DictCursor,
+            db=db,
+            host=hostname,
+            password=password,
+            read_timeout=timeout,
+            port=int(port),
+            user=username,
+            write_timeout=timeout,
+            )
+        else:
+            connection = psycopg2.connect(
+            host=hostname,
+            database=db,
+            user=username,
+            password=password
+            )
+
+        with connection.cursor() as cursor:
+            create_table_query = """
+        CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(50) NOT NULL,
+            email VARCHAR(100) NOT NULL,
+            age INT
+        );
+        """
+
+            cursor.execute(create_table_query)
+            insert_data_query = "INSERT INTO users (name, email, age) VALUES (%s, %s, %s);"
+            user_data = [
+            ("John Doe", "john.doe@example.com", 30),
+            ("Jane Smith", "jane.smith@example.com", 28),
+            ("Alice Johnson", "alice.j@example.com", 25)
+            ]
+
+            cursor.executemany(insert_data_query, user_data)
+
+        # Commit the transaction
+            connection.commit()
+            print("Data inserted successfully.")
+            print("Table created successfully.")
+            print(click.style(f"{success} connected to mysql database", "green", bold=True, underline=True))
+        if os.path.exists(config_path+"/db_bkup"):
+            current_user_db["db"] = "mysql"
+            current_user_db["port"] = port
+            current_user_db["db_name"] = db
+            current_user_db["username"] = username
+            current_user_db["host"] = hostname
+            key = Fernet.generate_key()
+            f = Fernet(key)
+            token = f.encrypt(password.encode())
+            current_user_db["password"] = token.decode()
+            current_user_db["key"] = key.decode()
+            with open(config_path+"/db_bkup/auth.json", "w") as  auth_config:
+                json.dump(current_user_db, auth_config)
+    except pymysql.err.OperationalError as OE:
+        print(click.style(f" x incorrect login credentials {OE} Try Again", "red" , bold=True, underline=True))
+    finally:
+        if connection is not None:
+            connection.close()
+        else:
+            return
+
+
+def connect_postgresql():
     connection = None
     try:
         timeout = 10
@@ -135,6 +206,7 @@ def connect_to_mysql(hostname, port, username, password,db):
             connection.close()
         else:
             return
+
 
 
 def connect_to_mongodb(uri):
@@ -335,7 +407,7 @@ def sync(username, password, uri, host, port, db, sqldbname):
                 raise click.ClickException("options to connect to your mysql database not provided or incomplete")
                 return
 
-            connect_to_mysql(host, port, username, password, sqldbname)
+            connect_to_mysql(host, port, username, password, sqldbname, "mysql")
             return
 
 
