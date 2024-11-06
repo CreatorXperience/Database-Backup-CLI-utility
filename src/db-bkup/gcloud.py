@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from google.cloud import storage
-from mysql_operator import BackupOperator
 from cryptography.fernet import Fernet
 import os
 import typing
