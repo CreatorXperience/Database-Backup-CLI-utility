@@ -140,78 +140,6 @@ def connect_postgres(uri):
         print(f"could not resolve the uri {uri}")
 
 
-def connect_postgresql():
-    connection = None
-    try:
-        timeout = 10
-        connection = pymysql.connect(
-        charset="utf8mb4",
-        connect_timeout=timeout,
-        cursorclass=pymysql.cursors.DictCursor,
-        db=db,
-        host=hostname,
-        password=password,
-        read_timeout=timeout,
-        port=int(port),
-        user=username,
-        write_timeout=timeout,
-        )
-
-        #cursor = connection.cursor()
-        #cursor.execute("INSERT INTO mytest (id) VALUES (1), (2)")
-        #connection.commit()
-        #cursor.execute("SELECT * FROM mytest")
-        #print(cursor.fetchall())
-
-
-        with connection.cursor() as cursor:
-            create_table_query = """
-        CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(50) NOT NULL,
-            email VARCHAR(100) NOT NULL,
-            age INT
-        );
-        """
-
-            cursor.execute(create_table_query)
-            insert_data_query = "INSERT INTO users (name, email, age) VALUES (%s, %s, %s);"
-            user_data = [
-            ("John Doe", "john.doe@example.com", 30),
-            ("Jane Smith", "jane.smith@example.com", 28),
-            ("Alice Johnson", "alice.j@example.com", 25)
-            ]
-
-            cursor.executemany(insert_data_query, user_data)
-
-        # Commit the transaction
-            connection.commit()
-            print("Data inserted successfully.")
-            print("Table created successfully.")
-            print(click.style(f"{success} connected to mysql database", "green", bold=True, underline=True))
-        if os.path.exists(config_path+"/db_bkup"):
-            current_user_db["db"] = "mysql"
-            current_user_db["port"] = port
-            current_user_db["db_name"] = db
-            current_user_db["username"] = username
-            current_user_db["host"] = hostname
-            key = Fernet.generate_key()
-            f = Fernet(key)
-            token = f.encrypt(password.encode())
-            current_user_db["password"] = token.decode()
-            current_user_db["key"] = key.decode()
-            with open(config_path+"/db_bkup/auth.json", "w") as  auth_config:
-                json.dump(current_user_db, auth_config)
-    except pymysql.err.OperationalError as OE:
-        print(click.style(f" x incorrect login credentials {OE} Try Again", "red" , bold=True, underline=True))
-    finally:
-        if connection is not None:
-            connection.close()
-        else:
-            return
-
-
-
 def connect_to_mongodb(uri):
     global current_user_db
     try:
@@ -285,7 +213,7 @@ def backup_mysql(table: None | str = None):
         tables = [table for table in cursor.fetchall()]
         table_map = {}
 
-        print(click.style("Select SQL Tables with digit  e.g 1 ", "red", bold=True, dim=True))
+        click.echo(info+click.style("Select SQL Tables with digit  e.g 1 ", "red", bold=True))
         for idx, table in enumerate(tables):
             for t in table.values():
                 table_map[f"{idx+1}"] = t
@@ -299,14 +227,27 @@ def backup_mysql(table: None | str = None):
                 return
 
         try:
-            print(click.style("{} your selected database is {}".format(success, table_map[selected_table]), "green", bold=True))
+            click.echo(success+click.style("{} your selected database is {}".format(success, table_map[selected_table]), "green", bold=True)))
             cursor.execute("SELECT * fROM {}".format(table_map[selected_table]))
             data = cursor.fetchall()
-            save_sql_data_on_local(data, table)
+            save_sql_data_on_local(data, table_map[selected_table])
         except KeyError:
             click.echo(error + click.style(" Please select with numbers instead."))
 
+def backup_postgres(uri, table):
+    try:
+        conn = psycopg2.connect(uri)
+        cur = conn.cursor()
 
+        with cur as curs:
+            cur.execute(f"SELECT * FROM {table}")
+            dt = cur.fetchall()
+            print(dt)
+            #run(["rsync", "-a", "/var/lib/postgresql/data/", backup_path])
+        conn.close()
+    except psycopg2.OperationalError:
+        click.echo(error+click.style("Couldn't reestablish the connection to your database, try connect again"))
+     
 def backup_mongodb(uri, db_name:str | None, *, coll: str | None):
     mongo_c = pymongo.MongoClient(uri, tlscafile=certifi.where())
     if db_name is not None:
@@ -409,7 +350,6 @@ def backup(database_name, table, collection, t, d):
             auth_obj = json.load(auth_file)
             match auth_obj["db"]:
                 case "mongodb":
-                    print("the user is using mongodb database")
                     if collection:
                         backup_mongodb(auth_obj["uri"], database_name, coll=collection)
                     elif database_name:
@@ -419,7 +359,8 @@ def backup(database_name, table, collection, t, d):
                     return
                 case "postgresql":
                     table = True
-                    print("the user is using postgres")
+                    if table:
+                        backup_postgres(auth_obj["uri"], table)
                     return
                 case "mysql":
                     if table and not collection:
