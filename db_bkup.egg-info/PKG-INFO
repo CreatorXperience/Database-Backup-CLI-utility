@@ -33,3 +33,10 @@ Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: bumpver
 Requires-Dist: pip-tools
+Requires-Dist: fire
+Requires-Dist: mysql-connector-python
+Requires-Dist: cryptography
+Requires-Dist: google-cloud-storage
+Requires-Dist: pymongo
+Requires-Dist: pymysql
+Requires-Dist: psycopg2-binary

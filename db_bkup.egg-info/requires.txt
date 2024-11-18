@@ -1,2 +1,9 @@
 bumpver
 pip-tools
+fire
+mysql-connector-python
+cryptography
+google-cloud-storage
+pymongo
+pymysql
+psycopg2-binary

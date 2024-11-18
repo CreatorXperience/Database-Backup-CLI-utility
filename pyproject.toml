@@ -22,10 +22,9 @@ dependencies = [
     "mysql-connector-python",
     "cryptography",
     "google-cloud-storage",
-    "bson",
     "pymongo",
-    "pymysql"
-
+    "pymysql",
+    "psycopg2-binary"
 ]
 requires-python = ">=3.9"
 

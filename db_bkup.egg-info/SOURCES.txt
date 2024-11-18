@@ -7,4 +7,3 @@ db_bkup.egg-info/dependency_links.txt
 db_bkup.egg-info/requires.txt
 db_bkup.egg-info/top_level.txt
 src/__init__.py
-src/entry.py

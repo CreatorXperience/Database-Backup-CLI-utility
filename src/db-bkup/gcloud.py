@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from google.cloud import storage
+# from google.cloud import storage
 from cryptography.fernet import Fernet
 import os
 import typing
@@ -12,32 +12,22 @@ import json
 import bson
 import pymysql
 import datetime
+import psycopg2
 
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./database-service-account-key.json"
 
 
-def create_bucket(bkt_name: str):
-    client: typing.Any = storage.Client()
-    new_bucket = client.bucket(bkt_name)
-    new_bucket.storage_class("COLDLINE")
-    bucket = client.create_bucket(new_bucket, location="us")
-    print(f'''successfully created {bucket.name},{bucket.location}
-          ,{bucket.storage_class}''')
+#def create_bucket(bkt_name: str):
+#    client: typing.Any = storage.Client()
+#    new_bucket = client.bucket(bkt_name)
+#    new_bucket.storage_class("COLDLINE")
+#   bucket = client.create_bucket(new_bucket, location="us")
+#    print(f'''successfully created {bucket.name},{bucket.location}
+#         ,{bucket.storage_class}''')
 
-    return bucket
+#   return bucket
 
-
-# TODO #1 #Duration: 1 hour
-# list all available bucket
-# set a condition if a bucket already exist
-# if it exist set document in that bucket #NOTE
-# document must have a unique name
-# if it doesn't create a new bucket
-
-# TODO #2 #Duration:  2 hour
-# connect to database if all credentials are valid
-# create a command line using click for full backup
 
 supported_db = ["postgresql", "mongodb", "mysql"]
 config_path = os.path.expanduser("~")+"/.config"
@@ -50,19 +40,6 @@ error = click.style("[ERROR]", "red", bold=True, dim=True)
 success = click.style("[SUCCESS]", "green", bold=True, dim=True)
 info = click.style("[INFO]", "green", bold=True, dim=True, underline=True)
 
-
-def validate_authentication_credentials(host, port, username, password, db):
-    matched = re.search(r"(?P<ip>\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3})", host)
-    host_length = len(host.split("."))
-    try:
-        if matched and host_length == 4 and int(port) and (
-                username and password and db
-                ):
-            return True
-        else:
-            return False
-    except ValueError:
-        print("Bad host")
 
 def connect_to_mysql(hostname, port, username, password,db, db_type):
     connection = None
@@ -134,6 +111,33 @@ def connect_to_mysql(hostname, port, username, password,db, db_type):
             connection.close()
         else:
             return
+
+
+def connect_postgres(uri):
+    try:
+        if os.path.exists(config_path):
+            if os.path.exists(config_path+"/db_bkup"):
+                conn = psycopg2.connect(uri)
+                cur = conn.cursor()
+                if not cur:
+                    click.echo(error+click.style(f"Couldn't resolve the uri {uri}","red", bold=True))
+                else:
+                    click.echo(success+click.style("connected to postgres db successfully", "green", bold=True))
+                with open(config_path+"/db_bkup/auth.json", "w") as cnf_file:
+                    connection_cnf = {
+                                "uri": uri,
+                                "db": "postgresql"
+                                }
+                    json.dump(connection_cnf, cnf_file)
+            else:
+                os.mkdir(config_path+"/db_bkup")
+                connect_postgres(uri)
+        else:
+            os.makedirs(config_path+"/db_bkup")
+            connect_postgres(uri)
+
+    except psycopg2.OperationalError:
+        print(f"could not resolve the uri {uri}")
 
 
 def connect_postgresql():
@@ -274,7 +278,6 @@ def backup_mysql(table: None | str = None):
         if table:
             cursor.execute("SELECT * FROM  {}".format(table))
             data = cursor.fetchall()
-            print(data)
             save_sql_data_on_local(data, table)
             return
 
@@ -299,16 +302,10 @@ def backup_mysql(table: None | str = None):
             print(click.style("{} your selected database is {}".format(success, table_map[selected_table]), "green", bold=True))
             cursor.execute("SELECT * fROM {}".format(table_map[selected_table]))
             data = cursor.fetchall()
-            print(data)
+            save_sql_data_on_local(data, table)
         except KeyError:
             click.echo(error + click.style(" Please select with numbers instead."))
 
-#        save_data()
-
-#        subprocess.run([f"echo {idx+1}"])
-        # cursor.execute("SELECT * FROM {}".format(tables[0]["Tables_in_defaultfb"]))
-#        data = cursor.fetchall()
-        print()
 
 def backup_mongodb(uri, db_name:str | None, *, coll: str | None):
     mongo_c = pymongo.MongoClient(uri, tlscafile=certifi.where())
@@ -380,20 +377,9 @@ def cli():
 @click.option("--port", required=False)
 @click.option("--sqldbname", help="Provide sql database name", required=False)
 def sync(username, password, uri, host, port, db, sqldbname):
-   # is_validated = validate_authentication_credentials(host, port, username, password, db)
-    #if is_validated:
-     #   print("validated")
-    #else:
-     #   print("bad payload, wrong data")
-      #  sys.exit()
-
-
     match db:
         case "postgresql":
-            print("postgresql is used")
-            postgres = importlib.import_module("click")
-            # replace click with the appropriate module for postgres
-            print(postgres.command())
+            connect_postgres(uri)
             return
         case "mongodb":
             if uri:
