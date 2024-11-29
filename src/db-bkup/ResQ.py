@@ -16,6 +16,7 @@ import bson
 from decimal import Decimal
 import certifi
 from pymongo.server_api import ServerApi
+import subprocess
 
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./database-service-account-key.json"
@@ -242,9 +243,11 @@ def backup_postgres(uri, table):
 
     except psycopg2.OperationalError:
         click.echo(error+click.style("Couldn't reestablish the connection to your database, try connect again"))
+
+
      
 def backup_mongodb(uri, db_name:str | None, *, coll: str | None):
-    print(uri)
+
     mongo_c = pymongo.MongoClient(uri, tlsCAfile=certifi.where(), server_api=ServerApi("1"))
     if db_name is not None:
         db = mongo_c[db_name]
@@ -368,6 +371,72 @@ def backup(database_name, table, collection, t, d):
     except FileNotFoundError as FnFe:
         print(FnFe)
         print(click.style("Couldn't get  your database try sync with your db again", "red", bold=True, underline=True))
+
+
+@cli.command(help="restore a mongodb database")
+@click.argument("file")
+@click.argument("database")
+@click.argument("collection")
+def restore_mongodb(file, database, collection):
+    try:
+        uri = None
+        coll = None
+        with open(file,  "r") as json_file:
+            auth_data = read_auth_file()
+            uri = auth_data["uri"]
+            client = pymongo.MongoClient(uri, tlscafile=certifi.where(), server_api=ServerApi("1"))
+            db = client[database]
+            coll = db[collection]
+
+            loaded_data = json.load(json_file, object_hook=deserializer)
+            print(loaded_data)
+            if coll is not None  and  isinstance(loaded_data, list):
+                return  coll.insert_many(loaded_data)
+            else:
+               return coll.insert_one(loade)
+    except pymongo.errors.PyMongoError as pe:
+        click.echo(error+" " + click.style(f"error occured while restoring database {pe}"))
+                
+
+@click.command(help="backup mysql database")
+@click.argument("`file_path")
+@click.argument("table")
+def restore_mysql(file_path):
+    try:
+        data =  read_auth_file()
+        conn = pymysql.connect(
+                host=data["host"],
+                password=f.decrypt(data["password"].encode()),
+                database=data["db_name"],
+                user=data["username"],
+                cursorclass=pymysql.cursors.DictCursor,
+                read_timeout=10,
+                connect_timeout=10,
+                charset="utf8mb4",
+                port=int(data["port"])
+                )
+        curs = conn.cur()
+        file_data = read_backup_file(file_path)
+        if not  isinstance(file_data, list):
+            raise ValueError("file  data is invalid or corrupted")
+        
+        columns = ", ".join(file[0].keys())
+        placeholders = "".join(["%s"] * len(file[0].keys()))
+        insert = "INSERT into  {table} "
+
+
+def read_backup_file(file_path):
+    with open(file_path,  "r") as f:
+        loaded_file = json.load(f, object_hook=deserializer)
+        return loaded_file
+
+
+
+
+def read_auth_file():
+    with open(config_path+"/db_bkup/auth.json", "r") as auth_config:
+        auth_data = json.load(auth_config)
+        return auth_data
 
 
 if __name__ == "__main__":
