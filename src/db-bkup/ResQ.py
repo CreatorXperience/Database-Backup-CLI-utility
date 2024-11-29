@@ -14,6 +14,8 @@ import datetime
 import psycopg2
 import bson
 from decimal import Decimal
+import certifi
+from pymongo.server_api import ServerApi
 
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./database-service-account-key.json"
@@ -123,7 +125,7 @@ def connect_postgres(uri):
 def connect_to_mongodb(uri):
     global current_user_db
     try:
-        pymongo.MongoClient(uri, tlscafile=certifi.where())
+        pymongo.MongoClient(uri, tlscafile=certifi.where(), server_api=ServerApi("1"))
         current_user_db["db"] = "mongodb"
         current_user_db["uri"] = uri
         if os.path.exists(config_path+"/db_bkup"):
@@ -147,10 +149,23 @@ class JSONEncoder(json.JSONEncoder):
         if isinstance(o, bson.ObjectId):
             return str(o)
         if isinstance(o, datetime.datetime):
-            return str(o)
+            return o.isoformat()
         if isinstance(o, Decimal):
-            return str(o)
+            return float(0)
         return super().default(o)
+
+
+
+def deserializer(d):
+    for key, value in d.items():
+        if len(value) == 24 and value.isalnum() and isinstance(value, str):
+            d[key] = bson.ObjectId(value)
+            return d
+        elif isinstance(value, str) and  value.endswith("Z") or "T" in value:
+            d[key] = datetime.datetime.fromisoformat(value)
+        elif isinstance(value, float):
+            d[key] = Decimal(str(float))
+
 
 
 def save_sql_data_on_local(data, filename: str, db: str):
@@ -225,12 +240,12 @@ def backup_postgres(uri, table):
         print(dt)
         save_sql_data_on_local(dt, table, "postgres")
 
-        #run(["rsync", "-a", "/var/lib/postgresql/data/", backup_path])
     except psycopg2.OperationalError:
         click.echo(error+click.style("Couldn't reestablish the connection to your database, try connect again"))
      
 def backup_mongodb(uri, db_name:str | None, *, coll: str | None):
-    mongo_c = pymongo.MongoClient(uri, tlscafile=certifi.where())
+    print(uri)
+    mongo_c = pymongo.MongoClient(uri, tlsCAfile=certifi.where(), server_api=ServerApi("1"))
     if db_name is not None:
         db = mongo_c[db_name]
     if coll is not None:
@@ -330,12 +345,12 @@ def backup(database_name, table, collection, t, d):
             auth_obj = json.load(auth_file)
             match auth_obj["db"]:
                 case "mongodb":
-                    if collection:
+                    if collection  and database_name:
                         backup_mongodb(auth_obj["uri"], database_name, coll=collection)
-                    elif database_name:
+                    elif database_name and not collection:
                         backup_mongodb(auth_obj["uri"], database_name, coll=None)
                     else:
-                        print(click.style("You did pass the options to backup a mongoDB  database. RUN db_bkup backup --help", "red", bold=True))
+                        click.echo(error + " " + click.style("You did pass the options to backup a mongoDB  database. RUN db_bkup backup --help", "red", bold=True))
                     return
                 case "postgresql":
                     if table:

@@ -24,7 +24,8 @@ dependencies = [
     "google-cloud-storage",
     "pymongo",
     "pymysql",
-    "psycopg2-binary"
+    "psycopg2-binary",
+    "certifi"
 ]
 requires-python = ">=3.9"
 
