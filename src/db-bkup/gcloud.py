@@ -41,26 +41,6 @@ error = click.style("[ERROR]", "red", bold=True, dim=True)
 success = click.style("[SUCCESS]", "green", bold=True, dim=True)
 info = click.style("[INFO]", "green", bold=True, dim=True, underline=True)
 
-# SQL commands
-CREATE_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS employees (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100),
-    position VARCHAR(50),
-    salary NUMERIC(10, 2)
-);
-"""
-
-INSERT_DATA_SQL = """
-INSERT INTO employees (name, position, salary)
-VALUES
-    ('Alice Johnson', 'Software Engineer', 85000.00),
-    ('Bob Smith', 'Data Analyst', 65000.00),
-    ('Carol Lee', 'Product Manager', 95000.00)
-RETURNING id;
-"""
-
-SELECT_DATA_SQL = "SELECT * FROM employees;"
 
 
 def connect_to_mysql(hostname, port, username, password,db, db_type):
@@ -88,31 +68,8 @@ def connect_to_mysql(hostname, port, username, password,db, db_type):
             password=password
             )
 
-        with connection.cursor() as cursor:
-            create_table_query = """
-        CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(50) NOT NULL,
-            email VARCHAR(100) NOT NULL,
-            age INT
-        );
-        """
-
-            cursor.execute(create_table_query)
-            insert_data_query = "INSERT INTO users (name, email, age) VALUES (%s, %s, %s);"
-            user_data = [
-            ("John Doe", "john.doe@example.com", 30),
-            ("Jane Smith", "jane.smith@example.com", 28),
-            ("Alice Johnson", "alice.j@example.com", 25)
-            ]
-
-            cursor.executemany(insert_data_query, user_data)
-
-        # Commit the transaction
-            connection.commit()
-            print("Data inserted successfully.")
-            print("Table created successfully.")
-            print(click.style(f"{success} connected to mysql database", "green", bold=True, underline=True))
+        
+        print(click.style(f"{success} connected to mysql database", "green", bold=True, underline=True))
         if os.path.exists(config_path+"/db_bkup"):
             current_user_db["db"] = "mysql"
             current_user_db["port"] = port
@@ -145,21 +102,6 @@ def connect_postgres(uri):
                     click.echo(error+click.style(f"Couldn't resolve the uri {uri}","red", bold=True))
                 else:
                     click.echo(success+click.style("connected to postgres db successfully", "green", bold=True))
-                    cur.execute(CREATE_TABLE_SQL)
-                    print("Table created successfully.")
-
-                    cur.execute(INSERT_DATA_SQL)
-                    inserted_ids = cur.fetchall()
-                    print("Data inserted successfully with IDs:", inserted_ids)
-
-
-                    cur.execute(SELECT_DATA_SQL)
-                    rows = cur.fetchall()
-                    print("Data in 'employees' table:")
-                    for row in rows:
-                        print(row)
-                    conn.commit()
-                    conn.close()
 
                 with open(config_path+"/db_bkup/auth.json", "w") as cnf_file:
                     connection_cnf = {
