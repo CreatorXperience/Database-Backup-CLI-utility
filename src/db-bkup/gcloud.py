@@ -9,10 +9,11 @@ import re
 import certifi
 import pymongo
 import json
-import bson
 import pymysql
 import datetime
 import psycopg2
+import bson
+from decimal import Decimal
 
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./database-service-account-key.json"
@@ -39,6 +40,27 @@ warning = click.style("[!WARNING]", "yellow", bold=True, dim=True)
 error = click.style("[ERROR]", "red", bold=True, dim=True)
 success = click.style("[SUCCESS]", "green", bold=True, dim=True)
 info = click.style("[INFO]", "green", bold=True, dim=True, underline=True)
+
+# SQL commands
+CREATE_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS employees (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    position VARCHAR(50),
+    salary NUMERIC(10, 2)
+);
+"""
+
+INSERT_DATA_SQL = """
+INSERT INTO employees (name, position, salary)
+VALUES
+    ('Alice Johnson', 'Software Engineer', 85000.00),
+    ('Bob Smith', 'Data Analyst', 65000.00),
+    ('Carol Lee', 'Product Manager', 95000.00)
+RETURNING id;
+"""
+
+SELECT_DATA_SQL = "SELECT * FROM employees;"
 
 
 def connect_to_mysql(hostname, port, username, password,db, db_type):
@@ -123,6 +145,22 @@ def connect_postgres(uri):
                     click.echo(error+click.style(f"Couldn't resolve the uri {uri}","red", bold=True))
                 else:
                     click.echo(success+click.style("connected to postgres db successfully", "green", bold=True))
+                    cur.execute(CREATE_TABLE_SQL)
+                    print("Table created successfully.")
+
+                    cur.execute(INSERT_DATA_SQL)
+                    inserted_ids = cur.fetchall()
+                    print("Data inserted successfully with IDs:", inserted_ids)
+
+
+                    cur.execute(SELECT_DATA_SQL)
+                    rows = cur.fetchall()
+                    print("Data in 'employees' table:")
+                    for row in rows:
+                        print(row)
+                    conn.commit()
+                    conn.close()
+
                 with open(config_path+"/db_bkup/auth.json", "w") as cnf_file:
                     connection_cnf = {
                                 "uri": uri,
@@ -136,7 +174,7 @@ def connect_postgres(uri):
             os.makedirs(config_path+"/db_bkup")
             connect_postgres(uri)
 
-    except psycopg2.OperationalError:
+    except psycopg2.OperationalError  or psycopg2.ProgrammingError:
         print(f"could not resolve the uri {uri}")
 
 
@@ -166,22 +204,24 @@ class JSONEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, bson.ObjectId):
             return str(o)
-        if isinstance(o, datetime):
+        if isinstance(o, datetime.datetime):
+            return str(o)
+        if isinstance(o, Decimal):
             return str(o)
         return super().default(o)
 
 
-def save_sql_data_on_local(data, filename: str):
+def save_sql_data_on_local(data, filename: str, db: str):
     if os.path.exists(config_path+"/db_bkup"):
-        if os.path.exists(config_path+"/db_bkup/mysql"):
-            with open(config_path+"/db_bkup/mysql/{}".format(filename+".json"), "w") as sql_db_bkup:
-                json.dump(data, sql_db_bkup)
+        if os.path.exists(config_path+f"/db_bkup/{db}"):
+            with open(config_path+"/db_bkup/{}/{}".format(db,filename+".json"), "w") as sql_db_bkup:
+                json.dump(data, sql_db_bkup, cls=JSONEncoder)
         else:
-            os.mkdir(config_path+"/db_bkup/mysql")
-            save_sql_data_on_local(data, filename)
+            os.mkdir(config_path+f"/db_bkup/{db}")
+            save_sql_data_on_local(data, filename, db)
     else:
-        os.makedirs(config_path+"/db_bkup/mysql")
-        save_sql_data_on_local(data, filename)
+        os.makedirs(config_path+"/db_bkup/{db}")
+        save_sql_data_on_local(data, filename, db)
 
 
 
@@ -206,7 +246,7 @@ def backup_mysql(table: None | str = None):
         if table:
             cursor.execute("SELECT * FROM  {}".format(table))
             data = cursor.fetchall()
-            save_sql_data_on_local(data, table)
+            save_sql_data_on_local(data, table, "mysql")
             return
 
         tables = cursor.execute("SHOW TABLES")
@@ -227,24 +267,23 @@ def backup_mysql(table: None | str = None):
                 return
 
         try:
-            click.echo(success+click.style("{} your selected database is {}".format(success, table_map[selected_table]), "green", bold=True)))
+            click.echo(success+click.style("{} your selected database is {}".format(success, table_map[selected_table]), "green", bold=True))
             cursor.execute("SELECT * fROM {}".format(table_map[selected_table]))
             data = cursor.fetchall()
-            save_sql_data_on_local(data, table_map[selected_table])
+            save_sql_data_on_local(data, table_map[selected_table], "mysql")
         except KeyError:
             click.echo(error + click.style(" Please select with numbers instead."))
 
 def backup_postgres(uri, table):
     try:
         conn = psycopg2.connect(uri)
-        cur = conn.cursor()
+        cur  = conn.cursor()
+        cur.execute(f"SELECT * FROM {table}")
+        dt = cur.fetchall()
+        print(dt)
+        save_sql_data_on_local(dt, table, "postgres")
 
-        with cur as curs:
-            cur.execute(f"SELECT * FROM {table}")
-            dt = cur.fetchall()
-            print(dt)
-            #run(["rsync", "-a", "/var/lib/postgresql/data/", backup_path])
-        conn.close()
+        #run(["rsync", "-a", "/var/lib/postgresql/data/", backup_path])
     except psycopg2.OperationalError:
         click.echo(error+click.style("Couldn't reestablish the connection to your database, try connect again"))
      
@@ -333,7 +372,7 @@ def sync(username, password, uri, host, port, db, sqldbname):
                 raise click.ClickException("options to connect to your mysql database not provided or incomplete")
                 return
 
-            connect_to_mysql(host, port, username, password, sqldbname, "mysql")
+            connect_to_mysql(host, port, username, password, sqldbname, "postgres")
             return
 
 
@@ -344,7 +383,6 @@ def sync(username, password, uri, host, port, db, sqldbname):
 @click.option("--t", default="full", type=click.Choice(["full", "increment"]))
 @click.option("--d", default=os.environ.get("HOME"))
 def backup(database_name, table, collection, t, d):
-    print(database_name)
     try:
         with open(config_path+"/db_bkup/auth.json", "r") as auth_file:
             auth_obj = json.load(auth_file)
@@ -358,9 +396,10 @@ def backup(database_name, table, collection, t, d):
                         print(click.style("You did pass the options to backup a mongoDB  database. RUN db_bkup backup --help", "red", bold=True))
                     return
                 case "postgresql":
-                    table = True
                     if table:
                         backup_postgres(auth_obj["uri"], table)
+                    else:
+                        click.echo(error+ " " + click.style("table to backup not provided"))
                     return
                 case "mysql":
                     if table and not collection:
