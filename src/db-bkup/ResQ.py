@@ -159,13 +159,17 @@ class JSONEncoder(json.JSONEncoder):
 
 def deserializer(d):
     for key, value in d.items():
-        if len(value) == 24 and value.isalnum() and isinstance(value, str):
+        if isinstance(value, str) and len(str(value)) == 24 and value.isalnum():
             d[key] = bson.ObjectId(value)
             return d
-        elif isinstance(value, str) and  value.endswith("Z") or "T" in value:
+        elif isinstance(value, str) and  value.endswith("Z") or isinstance(value, str) and "T" in value:
             d[key] = datetime.datetime.fromisoformat(value)
+            return d
         elif isinstance(value, float):
             d[key] = Decimal(str(float))
+            return d
+        else:
+            return  d
 
 
 
@@ -332,7 +336,7 @@ def sync(username, password, uri, host, port, db, sqldbname):
                 raise click.ClickException("options to connect to your mysql database not provided or incomplete")
                 return
 
-            connect_to_mysql(host, port, username, password, sqldbname, "postgres")
+            connect_to_mysql(host, port, username, password, sqldbname, "mysql")
             return
 
 
@@ -398,33 +402,47 @@ def restore_mongodb(file, database, collection):
         click.echo(error+" " + click.style(f"error occured while restoring database {pe}"))
                 
 
-@click.command(help="backup mysql database")
-@click.argument("`file_path")
+@cli.command(help="backup mysql database")
+@click.argument("file_path")
 @click.argument("table")
-def restore_mysql(file_path):
+def restore_mysql(file_path,table):
     try:
         data =  read_auth_file()
+        f = Fernet(data["key"])
         conn = pymysql.connect(
                 host=data["host"],
                 password=f.decrypt(data["password"].encode()),
-                database=data["db_name"],
+                db=data["db_name"],
                 user=data["username"],
                 cursorclass=pymysql.cursors.DictCursor,
                 read_timeout=10,
                 connect_timeout=10,
+                write_timeout=10,
                 charset="utf8mb4",
                 port=int(data["port"])
                 )
-        curs = conn.cur()
+        curs = conn.cursor()
         file_data = read_backup_file(file_path)
+        print(file_data)
         if not  isinstance(file_data, list):
             raise ValueError("file  data is invalid or corrupted")
         
-        columns = ", ".join(file[0].keys())
-        placeholders = "".join(["%s"] * len(file[0].keys()))
-        insert = "INSERT into  {table} "
-
-
+        columns = ", ".join(file_data[0].keys())
+        placeholders = ", ".join(["%s"] * len(file_data[0]))
+        print(columns, placeholders)
+        q = f"INSERT into  {table} ({columns}) VALUES ({placeholders})"
+        
+        for data_record in file_data:
+                try:
+                    curs.execute(q, list(data_record.values()))
+                except pymysql.MySQLError as Mye:
+                    click.echo(error+click.style(f"error occured while restoring to database, {Mye}"))
+        conn.commit()
+        curs.close()
+        conn.close()
+    except pymongo.errors.PyMongoError as pe:
+        click.echo(error+" " + click.style(f"error occured while restoring database {pe}"))
+                
 def read_backup_file(file_path):
     with open(file_path,  "r") as f:
         loaded_file = json.load(f, object_hook=deserializer)
