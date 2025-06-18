@@ -16,17 +16,6 @@ from pymongo.server_api import ServerApi
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./database-service-account-key.json"
 
 
-# def create_bucket(bkt_name: str):
-#    client: typing.Any = storage.Client()
-#    new_bucket = client.bucket(bkt_name)
-#    new_bucket.storage_class("COLDLINE")
-#   bucket = client.create_bucket(new_bucket, location="us")
-#    print(f'''successfully created {bucket.name},{bucket.location}
-#         ,{bucket.storage_class}''')
-
-#   return bucket
-
-
 supported_db = ["postgresql", "mongodb", "mysql"]
 config_path = os.path.expanduser("~") + "/.config"
 
